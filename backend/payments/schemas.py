@@ -6,7 +6,7 @@ from datetime import datetime
 
 
 class PaymentCreate(BaseModel):
-    amount: Decimal = Field(gt=0)
+    amount: Decimal = Field(gt=0, max_digits=18, decimal_places=2)
     currency: Literal["RUB", "USD", "EUR"]
     description: str = Field(max_length=128)
     metadata: dict[str, JsonValue]
