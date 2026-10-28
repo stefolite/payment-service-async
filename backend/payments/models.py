@@ -5,7 +5,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
-from datetime import datetime, timezone
+from datetime import datetime
 
 
 class Payment(Base):
