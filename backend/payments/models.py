@@ -4,6 +4,7 @@ from sqlalchemy import String, Numeric, CheckConstraint, DateTime
 from decimal import Decimal
 from uuid import UUID, uuid4
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.sql import func
 from datetime import datetime, timezone
 
 
@@ -27,7 +28,7 @@ class Payment(Base):
     idempotency_key: Mapped[str] = mapped_column(String(255), unique=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc)
+        server_default=func.now()
     )
     processed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
