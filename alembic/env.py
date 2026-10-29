@@ -9,6 +9,7 @@ from alembic import context
 
 from backend.db.base import Base
 from backend.payments.models import Payment
+from backend.outbox.models import Outbox
 from backend.core.config import Settings
 
 
