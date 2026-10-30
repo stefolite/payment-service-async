@@ -5,6 +5,10 @@ from sqlalchemy.ext.asyncio import create_async_engine
 import pytest_asyncio
 from alembic.config import Config
 from alembic import command
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy import delete
+from backend.payments.models import Payment
+from backend.outbox.models import Outbox
 
 
 @pytest.fixture
@@ -38,3 +42,20 @@ def migrated_database(test_database_url):
     config = Config("alembic.ini")
     config.attributes["database_url"] = test_database_url
     command.upgrade(config, "head")
+
+
+@pytest_asyncio.fixture
+async def test_session(test_engine):
+    async_factory = async_sessionmaker(
+        test_engine,
+        expire_on_commit=False
+    )
+    try:
+
+        async with async_factory() as session:
+            yield session
+
+    finally:
+        async with async_factory.begin() as session:
+            await session.execute(delete(Payment))
+            await session.execute(delete(Outbox))
