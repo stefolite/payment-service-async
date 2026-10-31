@@ -17,3 +17,10 @@ class PaymentAccepted(BaseModel):
     payment_id: UUID
     status: Literal["pending"]
     created_at: datetime
+
+
+class PaymentRead(BaseModel):
+    payment_id: UUID
+    status: Literal["pending", "succeeded", "failed"]
+    created_at: datetime
+    processed_at: datetime | None

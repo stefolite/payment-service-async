@@ -2,6 +2,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.payments.schemas import PaymentCreate
 from backend.payments.models import Payment
 from backend.outbox.models import Outbox
+from uuid import UUID
+from sqlalchemy import select
 
 
 async def create_payment(
@@ -28,3 +30,13 @@ async def create_payment(
         session.add(event)
 
     return payment
+
+
+async def get_payment(
+    session: AsyncSession,
+    payment_id: UUID,
+) -> Payment | None:
+    stmt = select(Payment).where(Payment.id == payment_id)
+    result = await session.execute(stmt)
+
+    return result.scalar_one_or_none()
