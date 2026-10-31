@@ -14,7 +14,11 @@ from backend.payments.schemas import (
     PaymentAccepted,
     PaymentRead
 )
-from backend.payments.service import create_payment, get_payment
+from backend.payments.service import (
+    create_payment,
+    get_payment,
+    IdempotencyConflictError
+)
 
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -30,7 +34,14 @@ async def create_payment_endpoint(
     idempotency_key: str = Header(),
     session: AsyncSession = Depends(get_async_session),
 ):
-    payment = await create_payment(session, data, idempotency_key)
+    try:
+        payment = await create_payment(session, data, idempotency_key)
+
+    except IdempotencyConflictError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Idempotency key conflict",
+        )
 
     return PaymentAccepted(
         payment_id=payment.id,
