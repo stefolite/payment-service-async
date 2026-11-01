@@ -11,3 +11,4 @@ class Settings(BaseSettings):
     database_url: str
     test_database_url: str | None = None
     api_key: str
+    rabbitmq_url: str
