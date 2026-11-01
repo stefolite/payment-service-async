@@ -5,8 +5,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="ignore"
+        extra="ignore",
     )
     app_name: str = "Payment Service"
     database_url: str
     test_database_url: str | None = None
+    api_key: str
