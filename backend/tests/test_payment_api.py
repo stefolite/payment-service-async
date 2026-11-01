@@ -7,6 +7,11 @@ from backend.outbox.models import Outbox
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 import asyncio
+from backend.core.config import Settings
+
+
+settings = Settings()
+AUTH_HEADERS = {"X-API-Key": settings.api_key}
 
 
 @pytest.mark.asyncio
@@ -30,7 +35,10 @@ async def test_create_and_get_payment(test_session):
                 "metadata": {"metadata": "metadata"},
                 "webhook_url": "http://test",
             }
-            headers = {"Idempotency-Key": str(uuid4())}
+            headers = {
+                **AUTH_HEADERS,
+                "Idempotency-Key": str(uuid4()),
+            }
 
             post_response = await client.post(
                 "/api/v1/payments",
@@ -47,7 +55,8 @@ async def test_create_and_get_payment(test_session):
             assert post_response_data["status"] == "pending"
 
             get_response = await client.get(
-                f"/api/v1/payments/{payment_id}"
+                f"/api/v1/payments/{payment_id}",
+                headers=AUTH_HEADERS
             )
 
             assert get_response.status_code == 200
@@ -77,7 +86,8 @@ async def test_get_payment_not_found(test_session):
         ) as client:
             payment_id = str(uuid4())
             get_response = await client.get(
-                f"/api/v1/payments/{payment_id}"
+                f"/api/v1/payments/{payment_id}",
+                headers=AUTH_HEADERS,
             )
 
             assert get_response.status_code == 404
@@ -112,6 +122,7 @@ async def test_create_payment_without_idempotency_key(test_session):
             post_response = await client.post(
                 "/api/v1/payments",
                 json=payment_data,
+                headers=AUTH_HEADERS,
             )
 
             assert post_response.status_code == 422
@@ -135,7 +146,8 @@ async def test_get_payment_invalid_uuid(test_session):
             base_url="http://test"
         ) as client:
             get_response = await client.get(
-                "/api/v1/payments/invalid_uuid"
+                "/api/v1/payments/invalid_uuid",
+                headers=AUTH_HEADERS,
             )
 
             assert get_response.status_code == 422
@@ -165,7 +177,10 @@ async def test_create_payment_idempotency(test_session):
                 "metadata": {"metadata": "metadata"},
                 "webhook_url": "http://test",
             }
-            headers = {"Idempotency-Key": str(uuid4())}
+            headers = {
+                **AUTH_HEADERS,
+                "Idempotency-Key": str(uuid4()),
+            }
 
             post_response_1 = await client.post(
                 "/api/v1/payments",
@@ -225,7 +240,10 @@ async def test_create_payment_idempotency_conflict(test_session):
                 "metadata": {"metadata": "metadata"},
                 "webhook_url": "http://test",
             }
-            headers = {"Idempotency-Key": str(uuid4())}
+            headers = {
+                **AUTH_HEADERS,
+                "Idempotency-Key": str(uuid4()),
+            }
 
             post_response_1 = await client.post(
                 "/api/v1/payments",
@@ -275,7 +293,10 @@ async def test_create_payment_concurrently(test_engine, test_session):
                 "metadata": {"metadata": "metadata"},
                 "webhook_url": "http://test",
             }
-            headers = {"Idempotency-Key": str(uuid4())}
+            headers = {
+                **AUTH_HEADERS,
+                "Idempotency-Key": str(uuid4()),
+            }
 
             response_1, response_2 = await asyncio.gather(
                 client.post(
@@ -299,3 +320,42 @@ async def test_create_payment_concurrently(test_engine, test_session):
 
     finally:
         app.dependency_overrides.pop(get_async_session, None)
+
+
+@pytest.mark.asyncio
+async def test_request_without_api_key():
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test"
+    ) as client:
+        response = await client.get(f"/api/v1/payments/{uuid4()}")
+        assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_request_with_invalid_api_key():
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test"
+    ) as client:
+        response = await client.get(
+            f"/api/v1/payments/{uuid4()}",
+            headers={"X-API-Key": "invalid_key"},
+        )
+        assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_health_without_api_key():
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test"
+    ) as client:
+        response = await client.get("/health",)
+        assert response.status_code == 200
