@@ -10,6 +10,7 @@ from backend.core.config import Settings
 settings = Settings()
 
 broker = RabbitBroker(settings.rabbitmq_url)
+
 payment_exchange = RabbitExchange(
     name="payments",
     type=ExchangeType.DIRECT,
@@ -18,5 +19,11 @@ payment_exchange = RabbitExchange(
 payment_queue = RabbitQueue(
     name="payment_processing",
     routing_key="payment.created",
+    durable=True,
+)
+
+webhook_queue = RabbitQueue(
+    name="webhook_delivery",
+    routing_key="payment.completed",
     durable=True,
 )

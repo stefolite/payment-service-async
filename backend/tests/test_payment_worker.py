@@ -1,7 +1,9 @@
 import pytest
 from unittest.mock import AsyncMock, Mock
 from backend.payments.models import Payment
+from backend.outbox.models import Outbox
 from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy import select
 from backend.payments.worker import process_payment
 
 
@@ -70,3 +72,17 @@ async def test_process_payment_idempotency(
     assert payment.status == expected_status
     assert payment.processed_at == payment_timestamp
     random_mock.assert_called_once()
+
+    stmt = (
+        select(Outbox)
+        .where(
+            Outbox.event_type == "payment.completed",
+            Outbox.payload["payment_id"].astext
+            == str(payment.id),
+        )
+    )
+
+    result = await test_session.execute(stmt)
+    event = result.scalar_one_or_none()
+
+    assert event is not None
