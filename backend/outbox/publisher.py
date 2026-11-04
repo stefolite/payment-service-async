@@ -1,3 +1,6 @@
+# python -m backend.outbox.publisher
+
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from backend.outbox.models import Outbox
@@ -52,5 +55,3 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     asyncio.run(main())
-
-# uv run python -m backend.outbox.publisher

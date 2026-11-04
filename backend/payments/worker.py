@@ -1,3 +1,6 @@
+# faststream run backend.payments.worker:app
+
+
 from backend.core.broker import broker, payment_exchange, payment_queue
 from faststream import FastStream
 import random
@@ -11,8 +14,6 @@ from datetime import datetime, timezone
 
 
 app = FastStream(broker)
-
-# uv run faststream run backend.payments.worker:app
 
 
 @broker.subscriber(queue=payment_queue, exchange=payment_exchange)
