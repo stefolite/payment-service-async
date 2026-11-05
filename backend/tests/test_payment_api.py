@@ -455,3 +455,29 @@ async def test_create_payment_idempotency_after_processing(test_session):
 
     finally:
         app.dependency_overrides.pop(get_async_session, None)
+
+
+@pytest.mark.asyncio
+async def test_create_payment_idempotency_key_too_long():
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/payments",
+            headers={
+                **AUTH_HEADERS,
+                "Idempotency-Key": "a" * 256,
+            },
+            json={
+                "amount": 1000,
+                "currency": "RUB",
+                "description": "description",
+                "metadata": {},
+                "webhook_url": "http://test",
+            },
+        )
+
+        assert response.status_code == 422

@@ -31,7 +31,7 @@ router = APIRouter(prefix="/payments", tags=["payments"])
 )
 async def create_payment_endpoint(
     data: PaymentCreate,
-    idempotency_key: str = Header(),
+    idempotency_key: str = Header(min_length=1, max_length=255),
     session: AsyncSession = Depends(get_async_session),
 ):
     try:

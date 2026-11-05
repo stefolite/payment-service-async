@@ -41,6 +41,7 @@ async def publish_batch(session: AsyncSession) -> int:
                 exchange=payment_exchange,
                 routing_key=event.event_type,
                 persist=True,
+                mandatory=True,
             )
 
             event.published_at = datetime.now(timezone.utc)

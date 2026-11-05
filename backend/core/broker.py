@@ -3,13 +3,20 @@ from faststream.rabbit import (
     RabbitExchange,
     RabbitQueue,
     ExchangeType,
+    Channel,
 )
 from backend.core.config import Settings
 
 
 settings = Settings()
 
-broker = RabbitBroker(settings.rabbitmq_url)
+broker = RabbitBroker(
+    settings.rabbitmq_url,
+    default_channel=Channel(
+        publisher_confirms=True,
+        on_return_raises=True,
+    ),
+)
 
 payment_exchange = RabbitExchange(
     name="payments",
