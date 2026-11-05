@@ -64,21 +64,6 @@ services:
       rabbitmq:
         condition: service_healthy
     restart: unless-stopped
-  
-  webhook-worker:
-    image: payment-service:local
-    command: faststream run backend.webhooks.worker:app
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
-    depends_on:
-      db:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    restart: unless-stopped
 
   publisher:
     image: payment-service:local
@@ -94,8 +79,6 @@ services:
       rabbitmq:
         condition: service_healthy
       payment-worker:
-        condition: service_started
-      webhook-worker:
         condition: service_started
     restart: unless-stopped
     

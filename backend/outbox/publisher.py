@@ -4,7 +4,13 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from backend.outbox.models import Outbox
-from backend.core.broker import broker, payment_exchange
+from backend.core.broker import (
+    broker,
+    payment_exchange,
+    payment_queue,
+    webhook_dlx,
+    webhook_dlq,
+)
 from datetime import datetime, timezone
 import asyncio
 from backend.db.session import async_session_factory
@@ -17,7 +23,10 @@ logger = logging.getLogger(__name__)
 async def publish_batch(session: AsyncSession) -> int:
     stmt = (
         select(Outbox)
-        .where(Outbox.published_at.is_(None))
+        .where(
+            Outbox.published_at.is_(None),
+            Outbox.event_type == "payment.created",
+        )
         .order_by(Outbox.created_at)
         .limit(50)
         .with_for_update(skip_locked=True)
@@ -41,6 +50,14 @@ async def publish_batch(session: AsyncSession) -> int:
 
 async def main():
     async with broker:
+        dlx = await broker.declare_exchange(webhook_dlx)
+        dlq = await broker.declare_queue(webhook_dlq)
+        await dlq.bind(dlx, routing_key="webhook.failed")
+
+        exchange = await broker.declare_exchange(payment_exchange)
+        queue = await broker.declare_queue(payment_queue)
+        await queue.bind(exchange, routing_key="payment.created")
+
         while True:
             async with async_session_factory() as session:
                 try:

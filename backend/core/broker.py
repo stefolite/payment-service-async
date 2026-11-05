@@ -24,14 +24,8 @@ webhook_dlx = RabbitExchange(
 )
 
 payment_queue = RabbitQueue(
-    name="payment_processing",
+    name="payments.new",
     routing_key="payment.created",
-    durable=True,
-)
-
-webhook_queue = RabbitQueue(
-    name="webhook_delivery",
-    routing_key="payment.completed",
     durable=True,
     arguments={
         "x-dead-letter-exchange": "webhook.dlx",

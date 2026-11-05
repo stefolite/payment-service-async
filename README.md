@@ -17,15 +17,17 @@
 ```text
 POST /api/v1/payments
   → PostgreSQL (payment + payment.created в Outbox)
-  → Outbox Publisher → RabbitMQ → Payment Worker
-  → PostgreSQL (status + payment.completed в Outbox)
-  → Outbox Publisher → RabbitMQ → Webhook Worker
-  → HTTP webhook / DLQ
+  → Outbox Publisher → RabbitMQ (payments.new)
+  → Payment Worker
+      → Обработка платежа и обновление статуса в БД
+      → HTTP webhook (до 3 попыток)
+          → Успех: ACK
+          → Ошибка: DLQ (webhook_dlq)
 ```
 
-События сохраняются вместе с изменениями платежа в одной транзакции.
+Событие `payment.created` сохраняется вместе с платежом в одной транзакции.
 
-Используется модель доставки **at-least-once**: повторная доставка сообщений возможна. Payment Worker защищён от повторной обработки уже завершённых платежей.
+Используется модель доставки **at-least-once**: повторная доставка сообщений возможна. При повторной доставке платёж не обрабатывается повторно, но webhook может быть отправлен повторно.
 
 ## Запуск
 
@@ -44,7 +46,7 @@ docker compose up -d --build
 docker compose exec api alembic upgrade head
 ```
 
-Запускаются шесть сервисов: `db`, `rabbitmq`, `api`, `publisher`, `payment-worker` и `webhook-worker`.
+Запускаются пять сервисов: `db`, `rabbitmq`, `api`, `publisher` и `payment-worker`.
 
 Внутри Docker сервисы подключаются к PostgreSQL и RabbitMQ по адресам `db:5432` и `rabbitmq:5672`.
 
@@ -97,7 +99,7 @@ curl http://127.0.0.1:8000/api/v1/payments/PAYMENT_ID \
 
 ### Webhook
 
-После обработки платежа сервис отправляет POST-запрос на указанный `webhook_url`.
+После обработки платежа Worker отправляет POST-запрос на указанный `webhook_url`.
 
 Пример тела уведомления:
 
@@ -108,7 +110,7 @@ curl http://127.0.0.1:8000/api/v1/payments/PAYMENT_ID \
 }
 ```
 
-При ошибке отправки выполняется до трёх HTTP-попыток. Если все попытки неуспешны, сообщение направляется в Dead Letter Queue (`webhook_dlq`).
+При ошибке доставки выполняется до трёх HTTP-попыток. Если все попытки неуспешны, сообщение отклоняется и направляется RabbitMQ в Dead Letter Queue (`webhook_dlq`).
 
 Для проверки доставки можно использовать [webhook.site](https://webhook.site/).
 
@@ -135,7 +137,7 @@ uv run pytest -q
 **Просмотр логов:**
 
 ```bash
-docker compose logs -f api publisher payment-worker webhook-worker
+docker compose logs -f api publisher payment-worker
 ```
 
 **Остановка контейнеров:**
