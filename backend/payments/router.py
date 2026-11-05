@@ -31,7 +31,7 @@ router = APIRouter(prefix="/payments", tags=["payments"])
 )
 async def create_payment_endpoint(
     data: PaymentCreate,
-    idempotency_key: str = Header(),
+    idempotency_key: str = Header(min_length=1, max_length=255),
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
@@ -68,7 +68,13 @@ async def get_payment_endpoint(
 
     return PaymentRead(
         payment_id=payment.id,
+        amount=payment.amount,
+        currency=payment.currency,
         status=payment.status,
+        description=payment.description,
+        webhook_url=payment.webhook_url,
+        metadata=payment._metadata,
+        idempotency_key=payment.idempotency_key,
         created_at=payment.created_at,
         processed_at=payment.processed_at,
     )

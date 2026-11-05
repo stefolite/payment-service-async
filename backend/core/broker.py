@@ -3,13 +3,20 @@ from faststream.rabbit import (
     RabbitExchange,
     RabbitQueue,
     ExchangeType,
+    Channel,
 )
 from backend.core.config import Settings
 
 
 settings = Settings()
 
-broker = RabbitBroker(settings.rabbitmq_url)
+broker = RabbitBroker(
+    settings.rabbitmq_url,
+    default_channel=Channel(
+        publisher_confirms=True,
+        on_return_raises=True,
+    ),
+)
 
 payment_exchange = RabbitExchange(
     name="payments",
@@ -24,14 +31,8 @@ webhook_dlx = RabbitExchange(
 )
 
 payment_queue = RabbitQueue(
-    name="payment_processing",
+    name="payments.new",
     routing_key="payment.created",
-    durable=True,
-)
-
-webhook_queue = RabbitQueue(
-    name="webhook_delivery",
-    routing_key="payment.completed",
     durable=True,
     arguments={
         "x-dead-letter-exchange": "webhook.dlx",

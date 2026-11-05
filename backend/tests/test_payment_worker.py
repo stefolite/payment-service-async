@@ -1,9 +1,11 @@
+
 import pytest
-from unittest.mock import AsyncMock, Mock
+import httpx
+from unittest.mock import AsyncMock, Mock, call
+from uuid import uuid4
+from sqlalchemy.exc import OperationalError
 from backend.payments.models import Payment
-from backend.outbox.models import Outbox
 from sqlalchemy.ext.asyncio import async_sessionmaker
-from sqlalchemy import select
 from backend.payments.worker import process_payment
 
 
@@ -57,7 +59,18 @@ async def test_process_payment_idempotency(
         test_factory,
     )
 
-    await process_payment({"payment_id": str(payment.id)})
+    response = httpx.Response(
+        status_code=200,
+        request=httpx.Request("POST", "http://test"),
+    )
+
+    http_client = Mock()
+    http_client.post = AsyncMock(return_value=response)
+
+    await process_payment(
+        {"payment_id": str(payment.id)},
+        http_client,
+    )
 
     await test_session.refresh(payment)
 
@@ -66,23 +79,137 @@ async def test_process_payment_idempotency(
 
     payment_timestamp = payment.processed_at
 
-    await process_payment({"payment_id": str(payment.id)})
+    await process_payment(
+        {"payment_id": str(payment.id)},
+        http_client,
+    )
     await test_session.refresh(payment)
 
     assert payment.status == expected_status
     assert payment.processed_at == payment_timestamp
     random_mock.assert_called_once()
 
-    stmt = (
-        select(Outbox)
-        .where(
-            Outbox.event_type == "payment.completed",
-            Outbox.payload["payment_id"].astext
-            == str(payment.id),
-        )
+    assert http_client.post.await_count == 2
+
+    http_client.post.assert_any_await(
+        url="http://test",
+        json={
+            "payment_id": str(payment.id),
+            "status": expected_status,
+        },
     )
 
-    result = await test_session.execute(stmt)
-    event = result.scalar_one_or_none()
 
-    assert event is not None
+@pytest.mark.asyncio
+async def test_process_payment_db_retry_success(monkeypatch):
+    payment_id = uuid4()
+
+    db_error = OperationalError(
+        "SELECT",
+        {},
+        Exception("Database unavailable"),
+    )
+
+    payload = {
+        "payment_id": str(payment_id),
+        "status": "succeeded",
+    }
+
+    db_mock = AsyncMock(
+        side_effect=[
+            db_error,
+            db_error,
+            ("http://test", payload),
+        ],
+    )
+
+    monkeypatch.setattr(
+        "backend.payments.worker.process_payment_in_db",
+        db_mock,
+    )
+
+    monkeypatch.setattr(
+        "backend.payments.worker.random.uniform",
+        Mock(return_value=2.5),
+    )
+
+    sleep_mock = AsyncMock()
+
+    monkeypatch.setattr(
+        "backend.payments.worker.asyncio.sleep",
+        sleep_mock,
+    )
+
+    response = httpx.Response(
+        status_code=200,
+        request=httpx.Request("POST", "http://test"),
+    )
+
+    http_client = Mock()
+    http_client.post = AsyncMock(return_value=response)
+
+    await process_payment(
+        {"payment_id": str(payment_id)},
+        http_client,
+    )
+
+    assert db_mock.await_count == 3
+    assert db_mock.await_args_list == [call(payment_id)] * 3
+    assert sleep_mock.await_args_list == [
+        call(2.5),
+        call(1),
+        call(2),
+    ]
+
+    http_client.post.assert_awaited_once_with(
+        url="http://test",
+        json=payload,
+    )
+
+
+@pytest.mark.asyncio
+async def test_process_payment_db_retry_exhausted(monkeypatch):
+    payment_id = uuid4()
+
+    db_error = OperationalError(
+        "SELECT",
+        {},
+        Exception("Database unavailable"),
+    )
+
+    db_mock = AsyncMock(side_effect=db_error)
+
+    monkeypatch.setattr(
+        "backend.payments.worker.process_payment_in_db",
+        db_mock,
+    )
+
+    monkeypatch.setattr(
+        "backend.payments.worker.random.uniform",
+        Mock(return_value=2.5),
+    )
+
+    sleep_mock = AsyncMock()
+
+    monkeypatch.setattr(
+        "backend.payments.worker.asyncio.sleep",
+        sleep_mock,
+    )
+
+    http_client = Mock()
+    http_client.post = AsyncMock()
+
+    with pytest.raises(OperationalError):
+        await process_payment(
+            {"payment_id": str(payment_id)},
+            http_client,
+        )
+
+    assert db_mock.await_count == 3
+    assert db_mock.await_args_list == [call(payment_id)] * 3
+    assert sleep_mock.await_args_list == [
+        call(2.5),
+        call(1),
+        call(2),
+    ]
+    http_client.post.assert_not_awaited()

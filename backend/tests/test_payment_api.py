@@ -2,8 +2,9 @@ from httpx import ASGITransport, AsyncClient
 from backend.main import app
 import pytest
 from backend.db.session import get_async_session
-from uuid import uuid4
+from uuid import UUID, uuid4
 from backend.outbox.models import Outbox
+from backend.payments.models import Payment
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 import asyncio
@@ -33,7 +34,7 @@ async def test_create_and_get_payment(test_session):
                 "currency": "RUB",
                 "description": "description",
                 "metadata": {"metadata": "metadata"},
-                "webhook_url": "http://test",
+                "webhook_url": "http://test/",
             }
             headers = {
                 **AUTH_HEADERS,
@@ -64,7 +65,18 @@ async def test_create_and_get_payment(test_session):
             get_response_data = get_response.json()
 
             assert get_response_data["payment_id"] == payment_id
+            assert get_response_data["amount"] == "1000.00"
+            assert get_response_data["currency"] == "RUB"
             assert get_response_data["status"] == "pending"
+            assert get_response_data["description"] == "description"
+            assert get_response_data["metadata"] == {"metadata": "metadata"}
+            assert get_response_data["webhook_url"] == "http://test/"
+            assert (
+                get_response_data["idempotency_key"]
+                == headers["Idempotency-Key"]
+            )
+            assert get_response_data["created_at"] is not None
+            assert get_response_data["processed_at"] is None
 
     finally:
         app.dependency_overrides.pop(get_async_session, None)
@@ -350,6 +362,18 @@ async def test_request_with_invalid_api_key():
 
 
 @pytest.mark.asyncio
+async def test_health_with_api_key():
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test"
+    ) as client:
+        response = await client.get("/health", headers=AUTH_HEADERS)
+        assert response.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_health_without_api_key():
     transport = ASGITransport(app=app)
 
@@ -357,5 +381,103 @@ async def test_health_without_api_key():
         transport=transport,
         base_url="http://test"
     ) as client:
-        response = await client.get("/health",)
-        assert response.status_code == 200
+        response = await client.get("/health")
+        assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_health_with_invalid_api_key():
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+    ) as client:
+        response = await client.get(
+            "/health",
+            headers={"X-API-Key": "invalid-key"},
+        )
+
+        assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_create_payment_idempotency_after_processing(test_session):
+    async def override_get_async_session():
+        yield test_session
+
+    app.dependency_overrides[get_async_session] = override_get_async_session
+
+    try:
+        transport = ASGITransport(app=app)
+
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+        ) as client:
+            payment_data = {
+                "amount": 1000,
+                "currency": "RUB",
+                "description": "description",
+                "metadata": {"metadata": "metadata"},
+                "webhook_url": "http://test",
+            }
+            headers = {
+                **AUTH_HEADERS,
+                "Idempotency-Key": str(uuid4()),
+            }
+
+            post_response_1 = await client.post(
+                "api/v1/payments",
+                json=payment_data,
+                headers=headers,
+            )
+
+            assert post_response_1.status_code == 202
+
+            payment_id = post_response_1.json()["payment_id"]
+
+            stmt = select(Payment).where(Payment.id == UUID(payment_id))
+            result = await test_session.execute(stmt)
+            payment = result.scalar_one()
+            payment.status = "succeeded"
+            await test_session.commit()
+
+            post_response_2 = await client.post(
+                "api/v1/payments",
+                json=payment_data,
+                headers=headers,
+            )
+
+            assert post_response_2.status_code == 202
+            assert post_response_2.json()["payment_id"] == payment_id
+            assert post_response_2.json()["status"] == "succeeded"
+
+    finally:
+        app.dependency_overrides.pop(get_async_session, None)
+
+
+@pytest.mark.asyncio
+async def test_create_payment_idempotency_key_too_long():
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/payments",
+            headers={
+                **AUTH_HEADERS,
+                "Idempotency-Key": "a" * 256,
+            },
+            json={
+                "amount": 1000,
+                "currency": "RUB",
+                "description": "description",
+                "metadata": {},
+                "webhook_url": "http://test",
+            },
+        )
+
+        assert response.status_code == 422
