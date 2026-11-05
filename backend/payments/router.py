@@ -68,7 +68,13 @@ async def get_payment_endpoint(
 
     return PaymentRead(
         payment_id=payment.id,
+        amount=payment.amount,
+        currency=payment.currency,
         status=payment.status,
+        description=payment.description,
+        webhook_url=payment.webhook_url,
+        metadata=payment._metadata,
+        idempotency_key=payment.idempotency_key,
         created_at=payment.created_at,
         processed_at=payment.processed_at,
     )

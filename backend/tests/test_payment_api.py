@@ -34,7 +34,7 @@ async def test_create_and_get_payment(test_session):
                 "currency": "RUB",
                 "description": "description",
                 "metadata": {"metadata": "metadata"},
-                "webhook_url": "http://test",
+                "webhook_url": "http://test/",
             }
             headers = {
                 **AUTH_HEADERS,
@@ -65,7 +65,18 @@ async def test_create_and_get_payment(test_session):
             get_response_data = get_response.json()
 
             assert get_response_data["payment_id"] == payment_id
+            assert get_response_data["amount"] == "1000.00"
+            assert get_response_data["currency"] == "RUB"
             assert get_response_data["status"] == "pending"
+            assert get_response_data["description"] == "description"
+            assert get_response_data["metadata"] == {"metadata": "metadata"}
+            assert get_response_data["webhook_url"] == "http://test/"
+            assert (
+                get_response_data["idempotency_key"]
+                == headers["Idempotency-Key"]
+            )
+            assert get_response_data["created_at"] is not None
+            assert get_response_data["processed_at"] is None
 
     finally:
         app.dependency_overrides.pop(get_async_session, None)

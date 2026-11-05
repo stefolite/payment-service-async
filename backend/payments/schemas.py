@@ -21,6 +21,12 @@ class PaymentAccepted(BaseModel):
 
 class PaymentRead(BaseModel):
     payment_id: UUID
+    amount: Decimal
+    currency: Literal["RUB", "USD", "EUR"]
     status: Literal["pending", "succeeded", "failed"]
+    description: str
+    metadata: dict[str, JsonValue]
+    webhook_url: str
+    idempotency_key: str
     created_at: datetime
     processed_at: datetime | None
