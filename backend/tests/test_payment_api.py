@@ -2,8 +2,9 @@ from httpx import ASGITransport, AsyncClient
 from backend.main import app
 import pytest
 from backend.db.session import get_async_session
-from uuid import uuid4
+from uuid import UUID, uuid4
 from backend.outbox.models import Outbox
+from backend.payments.models import Payment
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 import asyncio
@@ -359,3 +360,59 @@ async def test_health_without_api_key():
     ) as client:
         response = await client.get("/health",)
         assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_create_payment_idempotency_after_processing(test_session):
+    async def override_get_async_session():
+        yield test_session
+
+    app.dependency_overrides[get_async_session] = override_get_async_session
+
+    try:
+        transport = ASGITransport(app=app)
+
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+        ) as client:
+            payment_data = {
+                "amount": 1000,
+                "currency": "RUB",
+                "description": "description",
+                "metadata": {"metadata": "metadata"},
+                "webhook_url": "http://test",
+            }
+            headers = {
+                **AUTH_HEADERS,
+                "Idempotency-Key": str(uuid4()),
+            }
+
+            post_response_1 = await client.post(
+                "api/v1/payments",
+                json=payment_data,
+                headers=headers,
+            )
+
+            assert post_response_1.status_code == 202
+
+            payment_id = post_response_1.json()["payment_id"]
+
+            stmt = select(Payment).where(Payment.id == UUID(payment_id))
+            result = await test_session.execute(stmt)
+            payment = result.scalar_one()
+            payment.status = "succeeded"
+            await test_session.commit()
+
+            post_response_2 = await client.post(
+                "api/v1/payments",
+                json=payment_data,
+                headers=headers,
+            )
+
+            assert post_response_2.status_code == 202
+            assert post_response_2.json()["payment_id"] == payment_id
+            assert post_response_2.json()["status"] == "succeeded"
+
+    finally:
+        app.dependency_overrides.pop(get_async_session, None)

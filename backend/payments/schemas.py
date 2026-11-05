@@ -15,7 +15,7 @@ class PaymentCreate(BaseModel):
 
 class PaymentAccepted(BaseModel):
     payment_id: UUID
-    status: Literal["pending"]
+    status: Literal["pending", "succeeded", "failed"]
     created_at: datetime
 
 
