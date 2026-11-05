@@ -1,3 +1,4 @@
+
 # faststream run backend.payments.worker:app
 
 
@@ -19,6 +20,7 @@ from backend.webhooks.service import deliver_webhook
 from datetime import datetime, timezone
 import httpx
 from contextlib import asynccontextmanager
+from sqlalchemy.exc import OperationalError
 
 
 @asynccontextmanager
@@ -44,6 +46,21 @@ async def process_payment(
 
     await asyncio.sleep(random.uniform(2, 5))
 
+    for attempt in range(3):
+        try:
+            webhook_url, payload = await process_payment_in_db(payment_id)
+            break
+
+        except OperationalError:
+            if attempt == 2:
+                raise
+
+            await asyncio.sleep(2 ** attempt)
+
+    await deliver_webhook(http_client, webhook_url, payload)
+
+
+async def process_payment_in_db(payment_id: UUID) -> tuple[str, dict]:
     async with async_session_factory() as session:
         async with session.begin():
             stmt = (
@@ -70,7 +87,7 @@ async def process_payment(
                 "status": payment.status,
             }
 
-    await deliver_webhook(http_client, webhook_url, payload)
+    return webhook_url, payload
 
 
 @app.after_startup

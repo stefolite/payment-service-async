@@ -362,6 +362,18 @@ async def test_request_with_invalid_api_key():
 
 
 @pytest.mark.asyncio
+async def test_health_with_api_key():
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test"
+    ) as client:
+        response = await client.get("/health", headers=AUTH_HEADERS)
+        assert response.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_health_without_api_key():
     transport = ASGITransport(app=app)
 
@@ -369,8 +381,24 @@ async def test_health_without_api_key():
         transport=transport,
         base_url="http://test"
     ) as client:
-        response = await client.get("/health",)
-        assert response.status_code == 200
+        response = await client.get("/health")
+        assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_health_with_invalid_api_key():
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+    ) as client:
+        response = await client.get(
+            "/health",
+            headers={"X-API-Key": "invalid-key"},
+        )
+
+        assert response.status_code == 401
 
 
 @pytest.mark.asyncio
